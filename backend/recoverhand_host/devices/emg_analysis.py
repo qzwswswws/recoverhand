@@ -2,7 +2,7 @@
 
 这是算法工作节点的三条缝之一（脑电意图 / 肌电响应 / 手部运动映射）。
 实现 ``EmgResponseAnalyzer`` 协议即可替换；``EnvelopeEmgAnalyzer`` 是滑动 RMS
-基线 + 幅度阈值的基线版，供算法负责人对照与迭代。
+基线 + 幅度阈值的基线版，供对照与迭代。
 """
 
 from __future__ import annotations

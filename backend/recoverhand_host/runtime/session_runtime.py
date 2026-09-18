@@ -37,7 +37,7 @@ DEFAULT_PHASE_DURATIONS: dict[TrialPhase, float] = {
 class AssistStrategy(Protocol):
     """辅助策略：把冻结的 EEG 意图映射为手套命令序列。
 
-    算法负责人实现此协议即可替换闭环里的「意图 → 动作」映射；``assist_actions``
+    实现此协议即可替换闭环里的「意图 → 动作」映射；``assist_actions``
     接收冻结意图（含 ``state``/``grip``），返回按顺序下发的手套命令。
     """
 

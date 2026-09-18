@@ -1,3 +1,3 @@
-"""RecoverHand 上位机后端。"""
+"""RecoverHand 上位机核心包。"""
 
 __version__ = "0.2.0"

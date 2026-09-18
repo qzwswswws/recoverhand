@@ -6,8 +6,8 @@
     python debug_algorithms.py intent   # 脑电意图提取
     python debug_algorithms.py all      # 全部
 
-这是算法负责人的调试入口；把你要迭代的算法替换成自己的实现后，直接在这里
-跑通，再注入 ``SessionRuntime.run(...)`` 进闭环，界面由另一位开发者并行推进。
+该脚本用于在接入会话运行时前独立验证协议实现。肌电响应和动作策略可注入
+``SessionRuntime.run(...)``；脑电意图提取器当前由 EEG 驱动构造。
 """
 
 from __future__ import annotations

@@ -118,6 +118,7 @@ class DeviceWorker(QThread):
                 tick_seconds=float(payload.get("tick_seconds", 0.05)),
                 phase_durations=payload.get("phase_durations"),
                 assist_strategy=payload.get("assist_strategy"),
+                emg_analyzer=payload.get("emg_analyzer"),
             )
         except Exception as exc:  # noqa: BLE001 - 会话故障要可见
             self.failed.emit("session", str(exc))
