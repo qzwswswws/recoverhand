@@ -1,0 +1,1144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script>
+    if (new URLSearchParams(window.location.search).get('embed') === 'recoverhand') {
+      document.documentElement.classList.add('recoverhand-embed');
+    }
+  </script>
+  <title>手部粒子聚合动画原型</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f4f7ff;
+      --muted: #8f9bb3;
+      --glass: rgba(12, 16, 27, 0.72);
+      --line: rgba(156, 188, 255, 0.18);
+      --cyan: #63e5ff;
+      --rose: #ff779f;
+      --gold: #ffd993;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #020308; }
+    body { font-family: Inter, "Microsoft YaHei", system-ui, sans-serif; color: var(--ink); }
+    #stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+    #stage:active { cursor: grabbing; }
+    .vignette {
+      pointer-events: none; position: fixed; inset: 0;
+      background:
+        radial-gradient(circle at 52% 42%, transparent 20%, rgba(1,2,7,.16) 55%, rgba(0,0,3,.84) 100%),
+        linear-gradient(180deg, rgba(3,8,18,.12), rgba(0,0,0,.48));
+    }
+    .topbar { position: fixed; left: 28px; top: 24px; pointer-events: none; }
+    .eyebrow { color: var(--cyan); font-size: 11px; letter-spacing: .24em; text-transform: uppercase; }
+    h1 { margin: 8px 0 3px; font-size: clamp(22px, 3vw, 38px); font-weight: 520; letter-spacing: -.035em; }
+    .subtitle { color: var(--muted); font-size: 12px; letter-spacing: .06em; }
+    .stage-pill {
+      margin-top: 14px; display: inline-flex; align-items: center; gap: 9px;
+      padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); background: rgba(7,12,24,.48);
+      color: #d9e6ff; font-size: 12px; backdrop-filter: blur(14px);
+    }
+    .stage-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 12px var(--cyan); }
+    .panel {
+      position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+      width: min(920px, calc(100vw - 28px)); padding: 14px 16px 12px;
+      background: var(--glass); border: 1px solid var(--line); border-radius: 18px;
+      box-shadow: 0 18px 70px rgba(0,0,0,.45); backdrop-filter: blur(20px);
+    }
+    .controls { display: grid; grid-template-columns: auto auto 1fr auto auto auto; gap: 10px; align-items: center; }
+    button, select {
+      border: 1px solid rgba(151,185,255,.2); background: rgba(255,255,255,.055); color: var(--ink);
+      border-radius: 10px; min-height: 34px; padding: 0 11px; font: inherit; cursor: pointer;
+    }
+    button:hover, select:hover { border-color: rgba(125,219,255,.52); background: rgba(98,221,255,.09); }
+    button.primary { background: linear-gradient(135deg, rgba(58,179,255,.25), rgba(255,92,153,.16)); }
+    input[type="range"] { width: 100%; accent-color: #76ddff; }
+    .time { min-width: 76px; text-align: right; font-variant-numeric: tabular-nums; color: #c7d5ec; font-size: 12px; }
+    .parameters { display: grid; grid-template-columns: auto minmax(120px,1fr) 38px minmax(120px,1fr) 38px minmax(120px,1fr) 38px; gap: 9px; align-items: center; margin-top: 10px; }
+    .parameter { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: center; color: #9facc2; font-size: 11px; white-space: nowrap; }
+    .parameter output { color: #d8e7ff; text-align: right; font-size: 10px; font-variant-numeric: tabular-nums; }
+    .finger-controls { display: grid; grid-template-columns: auto minmax(150px,1fr) 38px minmax(150px,1fr) 38px; gap: 9px; align-items: center; margin-top: 9px; }
+    .finger-controls .selector { display: grid; grid-template-columns: auto auto; gap: 7px; align-items: center; color: #9facc2; font-size: 11px; white-space: nowrap; }
+    .finger-controls select { min-height: 28px; padding: 0 8px; }
+    .finger-controls output { color: #d8e7ff; text-align: right; font-size: 10px; font-variant-numeric: tabular-nums; }
+    #commandMode.active { border-color: rgba(99,229,255,.58); color: #8beaff; background: rgba(65,211,255,.12); }
+    .legend { display: flex; gap: 18px; margin-top: 9px; color: #77849c; font-size: 10px; letter-spacing: .04em; }
+    .legend span::before { content: ""; display: inline-block; width: 12px; height: 1px; margin: 0 6px 3px 0; background: currentColor; }
+    .hint { position: fixed; right: 24px; top: 26px; color: rgba(191,208,237,.55); font-size: 11px; text-align: right; line-height: 1.7; pointer-events: none; }
+    #error {
+      display: none; position: fixed; inset: 20px; place-items: center; padding: 30px;
+      color: #ffd5dd; background: #08040a; border: 1px solid #7e283e; border-radius: 20px; white-space: pre-wrap;
+    }
+    html.recoverhand-embed, html.recoverhand-embed body { background: #061b18; }
+    html.recoverhand-embed .topbar,
+    html.recoverhand-embed .panel,
+    html.recoverhand-embed .hint { display: none !important; }
+    html.recoverhand-embed #stage { cursor: default; pointer-events: none; }
+    html.recoverhand-embed .vignette {
+      background:
+        radial-gradient(circle at 52% 44%, transparent 25%, rgba(3,30,26,.16) 58%, rgba(1,13,12,.76) 100%),
+        linear-gradient(180deg, rgba(5,35,31,.06), rgba(1,12,11,.38));
+    }
+    @media (max-width: 700px) {
+      .controls { grid-template-columns: auto auto 1fr auto; }
+      .record, .speed { display: none; }
+      .hint { display: none; }
+      .topbar { left: 18px; top: 18px; }
+      .parameters { grid-template-columns: auto 1fr 34px; }
+      .parameter.contact-control, .parameter.clarity-control { display: none; }
+      .contact-output, .clarity-output { display: none; }
+      .finger-controls { grid-template-columns: auto 1fr 34px; }
+      .finger-controls .wave-control, .finger-controls .wave-output { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="stage" aria-label="粒子从平面抬升，形成张开的三维手并握拳"></canvas>
+  <div class="vignette"></div>
+  <header class="topbar">
+    <div class="eyebrow">Particle Hand Study · P03-E · Developer Edition</div>
+    <h1>聚 · 形 · 握</h1>
+    <div class="subtitle">平面粒子 → 3D 张手 → 握拳</div>
+    <div class="stage-pill" id="stageLabel">粒子静息</div>
+  </header>
+  <div class="hint">拖动：旋转视角<br>滚轮：缩放<br>空格：播放 / 暂停</div>
+  <section class="panel">
+    <div class="controls">
+      <button id="play" class="primary">暂停</button>
+      <button id="replay">重播</button>
+      <input id="timeline" type="range" min="0" max="12" step="0.001" value="0" aria-label="动画时间轴" />
+      <span class="time" id="timeReadout">0.00 / 12.00</span>
+      <select id="speed" class="speed" aria-label="播放速度">
+        <option value="0.5">0.5×</option>
+        <option value="1" selected>1.0×</option>
+        <option value="1.5">1.5×</option>
+      </select>
+      <button id="record" class="record">录制一轮</button>
+    </div>
+    <div class="parameters">
+      <button id="commandMode" title="切换动画时间轴与外部弯曲指令">指令：动画</button>
+      <label class="parameter bend-control">弯曲指令<input id="bendCommand" type="range" min="0" max="1" step="0.01" value="0" aria-label="弯曲指令，0张手，1握拳" /></label>
+      <output id="bendValue">—</output>
+      <label class="parameter clarity-control">边界清晰<input id="clarity" type="range" min="0.5" max="1.5" step="0.01" value="1" aria-label="边界清晰程度" /></label>
+      <output id="clarityValue" class="clarity-output">1.00</output>
+      <label class="parameter contact-control">接触强度<input id="contact" type="range" min="0" max="1.5" step="0.01" value="1" aria-label="皮肤接触强度" /></label>
+      <output id="contactValue" class="contact-output">1.00</output>
+    </div>
+    <div class="finger-controls">
+      <label class="selector">控制对象
+        <select id="fingerSelect" aria-label="选择单独控制的手指">
+          <option value="all">五指同步</option>
+          <option value="thumb">拇指</option>
+          <option value="index">食指</option>
+          <option value="middle">中指</option>
+          <option value="ring">无名指</option>
+          <option value="little">小拇指</option>
+        </select>
+      </label>
+      <label class="parameter">弯曲<input id="fingerCommand" type="range" min="0" max="1" step="0.01" value="0" aria-label="所选手指弯曲程度" /></label>
+      <output id="fingerValue">0.00</output>
+      <label class="parameter wave-control">粒子波动<input id="wave" type="range" min="0" max="1.5" step="0.01" value="0" aria-label="粒子波动强度" /></label>
+      <output id="waveValue" class="wave-output">0.00</output>
+    </div>
+    <div class="legend">
+      <span style="color:#63e5ff">抬升 1.2–5.6s</span>
+      <span style="color:#ffd993">张手 5.6–7.4s</span>
+      <span style="color:#ff779f">握拳 7.4–10.4s</span>
+    </div>
+  </section>
+  <div id="error"></div>
+
+  <script src="./hand-particle-data.js"></script>
+  <script>
+  (() => {
+    'use strict';
+    const VERSION = 'P03E-dev-1.0.0';
+    const DURATION = 12;
+    const EMBED_MODE = document.documentElement.classList.contains('recoverhand-embed');
+    const EMBED_PROFILE = Object.freeze({
+      maxDevicePixelRatio: 1,
+      bloomPasses: 1,
+      useHdrTargets: false
+    });
+    window.RECOVERHAND_EMBED_PROFILE = EMBED_MODE ? EMBED_PROFILE : null;
+    const canvas = document.getElementById('stage');
+    const errorBox = document.getElementById('error');
+    const gl = canvas.getContext('webgl2', {
+      alpha: false,
+      antialias: !EMBED_MODE,
+      preserveDrawingBuffer: !EMBED_MODE,
+      powerPreference: 'high-performance',
+      desynchronized: EMBED_MODE
+    });
+    if (!gl) {
+      errorBox.style.display = 'grid';
+      errorBox.textContent = '当前浏览器未启用 WebGL2，无法播放 P03-E 开发版。';
+      return;
+    }
+
+    const vertexShader = `#version 300 es
+      precision highp float;
+      in vec3 aStart;
+      in vec3 aPose;
+      in vec3 aPrevPose;
+      in vec3 aColor;
+      in float aSeed;
+      in float aLineT;
+      in float aContact;
+      uniform float uTime;
+      uniform float uEffectTime;
+      uniform float uBend;
+      uniform float uWave;
+      uniform float uAspect;
+      uniform float uYaw;
+      uniform float uPitch;
+      uniform float uZoom;
+      uniform float uPointScale;
+      uniform float uMode;
+      uniform float uStatic;
+      uniform float uGlobalAlpha;
+      out vec3 vColor;
+      out float vAlpha;
+      out float vSpeed;
+
+      float saturate(float v) { return clamp(v, 0.0, 1.0); }
+      float ease(float v) { v = saturate(v); return v*v*(3.0-2.0*v); }
+      float smoother(float v) { v = saturate(v); return v*v*v*(v*(v*6.0-15.0)+10.0); }
+
+      vec3 waveOffset(vec3 p,float tm) {
+        float along=saturate((p.y+2.85)/5.95);
+        float phase=tm*2.20-along*8.40+aSeed*.72;
+        float crest=sin(phase);
+        float side=sin(phase*.71+aSeed*11.7);
+        return vec3(side*.013,cos(phase*.83+aSeed*4.1)*.010,crest*.043)*uWave;
+      }
+
+      vec3 basePose(float tm, vec3 target) {
+        float delay = 1.02 + aSeed * 0.94;
+        float arrive = 4.56 + aSeed * 0.46;
+        float gather = smoother((tm - delay) / max(0.35, arrive - delay));
+        float phase = aSeed * 6.2831853 + floor(aSeed * 7.0) * .31;
+        vec3 drift = vec3(sin(phase),0.0,cos(phase)) * (.30 + aSeed*.54);
+        vec3 p1 = aStart + vec3(drift.x,1.05+aSeed*.72,drift.z);
+        vec3 p2 = target + vec3(-drift.z*.38,-.48,drift.x*.38);
+        float inv = 1.0-gather;
+        vec3 p = inv*inv*inv*aStart + 3.0*inv*inv*gather*p1 + 3.0*inv*gather*gather*p2 + gather*gather*gather*target;
+
+        float flow = pow(max(0.0,sin(gather*3.14159265)),1.15);
+        p.x += sin(tm*1.52 + phase + p.y*1.18) * flow * .115;
+        p.z += cos(tm*1.28 + phase*.83 + p.x*1.07) * flow * .125;
+
+        float travel = (1.0 - gather) + 0.28 * sin(gather * 3.14159265);
+        vec3 shimmer = vec3(
+          sin(phase + tm * 1.7),
+          sin(phase * 1.37 + tm * 1.15),
+          cos(phase * 0.91 + tm * 1.42)
+        );
+        p += shimmer * (0.012 + 0.055 * travel);
+        return p;
+      }
+
+      vec3 rotateView(vec3 p) {
+        float cy = cos(uYaw), sy = sin(uYaw);
+        p.xz = mat2(cy, -sy, sy, cy) * p.xz;
+        float cp = cos(uPitch), sp = sin(uPitch);
+        p.yz = mat2(cp, -sp, sp, cp) * p.yz;
+        return p;
+      }
+
+      void main() {
+        float prevT = max(0.0, uTime - (0.030 + aSeed * 0.045));
+        float effectT = uStatic > 0.5 ? uEffectTime : uTime;
+        float prevEffectT = max(0.0, effectT - (0.030 + aSeed * 0.045));
+        vec3 current = uStatic > 0.5 ? aPose : basePose(uTime, aPose);
+        vec3 previous = uStatic > 0.5 ? aPrevPose : basePose(prevT, aPrevPose);
+        if (uStatic > 0.5) {
+          current.y += sin(effectT * 1.9 + aSeed * 15.0) * 0.018;
+          previous.y += sin(prevEffectT * 1.9 + aSeed * 15.0) * 0.018;
+        }
+        float waveReady=uStatic>.5?1.0:smoother((uTime-3.70)/1.25);
+        current+=waveOffset(current,effectT)*waveReady;
+        previous+=waveOffset(previous,prevEffectT)*waveReady;
+        vec3 p = mix(current, previous, aLineT * uMode);
+        float speed = length(current - previous) * 20.0;
+
+        p.y += 0.16;
+        p = rotateView(p);
+        p.z += uZoom;
+        float focal = 2.28;
+        // Perspective depth for a positive-Z camera (near 3, far 20).
+        gl_Position = vec4(p.x * focal / uAspect, p.y * focal, 1.352941 * p.z - 7.058824, p.z);
+        float fistStrain = smoother(uBend);
+        float anatomyCut = uMode < 0.5 ? max(aLineT,0.0) : 0.0;
+        float wrinkle = uMode < 0.5 ? max(-aLineT,0.0) : 0.0;
+        float wrinkleSize = mix(1.0,mix(.88,1.10,fistStrain),wrinkle);
+        gl_PointSize = uPointScale * (7.4 / max(3.0, p.z)) * (0.72 + aSeed * 0.62) * (1.0-anatomyCut*.16) * wrinkleSize * (1.0+aContact*.13);
+
+        float fadeIn = ease(uTime / 0.45);
+        float fadeOut = 1.0 - ease((uTime - 11.35) / 0.6);
+        float cutDepth = mix(.25,.90,fistStrain);
+        float wrinkleGain = mix(.42,1.46,fistStrain);
+        float waveHighlight=pow(.5+.5*sin(effectT*2.20-saturate((current.y+2.85)/5.95)*8.40+aSeed*.72),6.0)*uWave;
+        vAlpha = uGlobalAlpha * fadeIn * fadeOut * (1.0-anatomyCut*cutDepth) * mix(1.0,wrinkleGain,wrinkle) * (1.0+aContact*.18) * (1.0+.16*waveHighlight);
+        float depthLight = clamp(1.10 - (p.z - 10.5) * 0.045, 0.78, 1.16);
+        vec3 baseColor = aColor * (0.86 + min(speed, 1.45) * 0.18) * depthLight;
+        baseColor=mix(baseColor,vec3(.78,1.05,1.10),min(.22,waveHighlight*.15));
+        vColor = mix(baseColor,vec3(.64,1.06,1.12),aContact*.18);
+        vSpeed = speed;
+      }
+    `;
+
+    const fragmentShader = `#version 300 es
+      precision highp float;
+      uniform float uMode;
+      uniform float uSoftness;
+      in vec3 vColor;
+      in float vAlpha;
+      in float vSpeed;
+      out vec4 fragColor;
+      void main() {
+        float alpha = vAlpha;
+        if (uMode < 0.5) {
+          vec2 q = gl_PointCoord - 0.5;
+          float d = length(q) * 2.0;
+          float glow = exp(-d*d * uSoftness);
+          float core = smoothstep(1.0, 0.12, d);
+          alpha *= mix(glow, core, 0.42);
+          if (d > 1.0) discard;
+        } else {
+          float moving = smoothstep(0.10, 0.42, vSpeed);
+          float overloadGuard = 1.0 / (1.0 + 0.12 * max(0.0, vSpeed - 1.5));
+          alpha *= moving * overloadGuard * (0.27 + min(vSpeed, 2.4) * 0.10);
+        }
+        fragColor = vec4(vColor, alpha);
+      }
+    `;
+
+    const cubeVertexShader = `#version 300 es
+      precision highp float;
+      in vec3 aPosition;
+      uniform float uAspect;
+      uniform float uYaw;
+      uniform float uPitch;
+      uniform float uZoom;
+      void main() {
+        vec3 p = aPosition;
+        p.y += .14;
+        float cy = cos(uYaw), sy = sin(uYaw);
+        p.xz = mat2(cy, -sy, sy, cy) * p.xz;
+        float cp = cos(uPitch), sp = sin(uPitch);
+        p.yz = mat2(cp, -sp, sp, cp) * p.yz;
+        p.z += uZoom;
+        float focal = 2.28;
+        gl_Position = vec4(p.x * focal / uAspect, p.y * focal, 1.352941 * p.z - 7.058824, p.z);
+      }
+    `;
+
+    const cubeFragmentShader = `#version 300 es
+      precision highp float;
+      uniform vec3 uColor;
+      uniform float uAlpha;
+      out vec4 fragColor;
+      void main() { fragColor = vec4(uColor, uAlpha); }
+    `;
+
+    const postVertexShader = `#version 300 es
+      precision highp float;
+      out vec2 vUv;
+      void main() {
+        vec2 p = gl_VertexID == 0 ? vec2(-1.0,-1.0) : (gl_VertexID == 1 ? vec2(3.0,-1.0) : vec2(-1.0,3.0));
+        vUv = p * 0.5 + 0.5;
+        gl_Position = vec4(p,0.0,1.0);
+      }
+    `;
+
+    const brightFragmentShader = `#version 300 es
+      precision highp float;
+      in vec2 vUv;
+      uniform sampler2D uTexture;
+      uniform float uThreshold;
+      out vec4 fragColor;
+      void main() {
+        vec3 c = texture(uTexture,vUv).rgb;
+        float peak = max(c.r,max(c.g,c.b));
+        float contribution = smoothstep(uThreshold,uThreshold + 0.62,peak);
+        fragColor = vec4(c * contribution,1.0);
+      }
+    `;
+
+    const blurFragmentShader = `#version 300 es
+      precision highp float;
+      in vec2 vUv;
+      uniform sampler2D uTexture;
+      uniform vec2 uDirection;
+      uniform vec2 uTexel;
+      out vec4 fragColor;
+      void main() {
+        vec2 d = uDirection * uTexel;
+        vec3 c = texture(uTexture,vUv).rgb * 0.227027;
+        c += texture(uTexture,vUv + d * 1.384615).rgb * 0.316216;
+        c += texture(uTexture,vUv - d * 1.384615).rgb * 0.316216;
+        c += texture(uTexture,vUv + d * 3.230769).rgb * 0.070270;
+        c += texture(uTexture,vUv - d * 3.230769).rgb * 0.070270;
+        fragColor = vec4(c,1.0);
+      }
+    `;
+
+    const compositeFragmentShader = `#version 300 es
+      precision highp float;
+      in vec2 vUv;
+      uniform sampler2D uScene;
+      uniform sampler2D uBloom;
+      uniform float uBloomStrength;
+      uniform float uTime;
+      out vec4 fragColor;
+      float hash21(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7))) * 43758.5453123);}
+      vec3 aces(vec3 x){
+        return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0);
+      }
+      void main() {
+        vec3 scene = texture(uScene,vUv).rgb;
+        vec3 bloom = texture(uBloom,vUv).rgb;
+        vec3 c = scene + bloom * uBloomStrength;
+        c *= vec3(0.88,1.06,1.13);
+        c = aces(c * 1.08);
+        float vignette = 1.0 - smoothstep(0.18,0.86,length(vUv-0.5));
+        c *= mix(0.74,1.0,vignette);
+        c += (hash21(gl_FragCoord.xy + uTime * 31.0)-0.5) / 255.0;
+        fragColor = vec4(c,1.0);
+      }
+    `;
+
+    function compile(type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
+      return shader;
+    }
+    function createProgram() {
+      const program = gl.createProgram();
+      gl.attachShader(program, compile(gl.VERTEX_SHADER, vertexShader));
+      gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragmentShader));
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+      return program;
+    }
+
+    function createAuxProgram(vs, fs) {
+      const result = gl.createProgram();
+      gl.attachShader(result, compile(gl.VERTEX_SHADER, vs));
+      gl.attachShader(result, compile(gl.FRAGMENT_SHADER, fs));
+      gl.linkProgram(result);
+      if (!gl.getProgramParameter(result, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(result));
+      return result;
+    }
+
+    let program, cubeProgram, brightProgram, blurProgram, compositeProgram;
+    try {
+      program = createProgram();
+      cubeProgram = createAuxProgram(cubeVertexShader, cubeFragmentShader);
+      brightProgram = createAuxProgram(postVertexShader, brightFragmentShader);
+      blurProgram = createAuxProgram(postVertexShader, blurFragmentShader);
+      compositeProgram = createAuxProgram(postVertexShader, compositeFragmentShader);
+    }
+    catch (err) {
+      errorBox.style.display = 'grid';
+      errorBox.textContent = '着色器初始化失败：\n' + err.message;
+      return;
+    }
+    gl.useProgram(program);
+
+    function mulberry32(seed) {
+      return function() {
+        let t = seed += 0x6D2B79F5;
+        t = Math.imul(t ^ t >>> 15, t | 1);
+        t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+    const rand = mulberry32(0x51F15EED);
+    const meshData = window.HAND_PARTICLE_DATA;
+    if (!meshData || !meshData.vertices || !meshData.sampleIndices || !meshData.bonePositions) {
+      errorBox.style.display='grid';
+      errorBox.textContent='统一手部粒子数据未加载，请确认 hand-particle-data.js 与本页面位于同一目录。';
+      return;
+    }
+    function decodeTyped(base64,Type) {
+      const binary=atob(base64), bytes=new Uint8Array(binary.length);
+      for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+      return new Type(bytes.buffer);
+    }
+    const count = meshData.count;
+    const rig={
+      vertexCount:meshData.vertexCount,boneCount:meshData.boneCount,
+      vertices:decodeTyped(meshData.vertices,Float32Array),
+      skinWeights:decodeTyped(meshData.skinWeights,Float32Array),
+      skinIndices:decodeTyped(meshData.skinIndices,Uint8Array),
+      boneParents:decodeTyped(meshData.boneParents,Int16Array),
+      bonePositions:decodeTyped(meshData.bonePositions,Float32Array),
+      boneRotations:decodeTyped(meshData.boneRotations,Float32Array),
+      sampleIndices:decodeTyped(meshData.sampleIndices,Uint16Array),
+      sampleBarycentric:decodeTyped(meshData.sampleBarycentric,Float32Array),
+      world:meshData.worldTransform
+    };
+    const qIdentity=[0,0,0,1];
+    function qMul(a,b){return [a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1],a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3],a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]];}
+    function qConj(q){return [-q[0],-q[1],-q[2],q[3]];}
+    function qRotate(q,v){
+      const x=q[0],y=q[1],z=q[2],w=q[3],tx=2*(y*v[2]-z*v[1]),ty=2*(z*v[0]-x*v[2]),tz=2*(x*v[1]-y*v[0]);
+      return [v[0]+w*tx+(y*tz-z*ty),v[1]+w*ty+(z*tx-x*tz),v[2]+w*tz+(x*ty-y*tx)];
+    }
+    function qAxis(axis,angle){const s=Math.sin(angle/2);return [axis[0]*s,axis[1]*s,axis[2]*s,Math.cos(angle/2)];}
+    function qEuler(x,y,z){return qMul(qMul(qAxis([1,0,0],x),qAxis([0,1,0],y)),qAxis([0,0,1],z));}
+    function qSlerp(a,b,t){
+      let dot=a[0]*b[0]+a[1]*b[1]+a[2]*b[2]+a[3]*b[3],bb=b;
+      if(dot<0){dot=-dot;bb=[-b[0],-b[1],-b[2],-b[3]];}
+      if(dot>.9995){const q=[a[0]+(bb[0]-a[0])*t,a[1]+(bb[1]-a[1])*t,a[2]+(bb[2]-a[2])*t,a[3]+(bb[3]-a[3])*t],l=Math.hypot(...q);return q.map(v=>v/l);}
+      const theta=Math.acos(Math.max(-1,Math.min(1,dot))),s=Math.sin(theta),w0=Math.sin((1-t)*theta)/s,w1=Math.sin(t*theta)/s;
+      return [a[0]*w0+bb[0]*w1,a[1]*w0+bb[1]*w1,a[2]*w0+bb[2]*w1,a[3]*w0+bb[3]*w1];
+    }
+    function smoothJS(v){v=Math.max(0,Math.min(1,v));return v*v*v*(v*(v*6-15)+10);}
+    function globalBones(deltas){
+      const globals=[];
+      for(let i=0;i<rig.boneCount;i++){
+        const bindQ=Array.from(rig.boneRotations.subarray(i*4,i*4+4)),localQ=qMul(bindQ,deltas[i]);
+        const localT=Array.from(rig.bonePositions.subarray(i*3,i*3+3)),parentIndex=rig.boneParents[i];
+        if(parentIndex<0) globals.push({q:localQ,t:localT});
+        else {const parent=globals[parentIndex],r=qRotate(parent.q,localT);globals.push({q:qMul(parent.q,localQ),t:[parent.t[0]+r[0],parent.t[1]+r[1],parent.t[2]+r[2]]});}
+      }
+      return globals;
+    }
+    const identityDeltas=Array.from({length:rig.boneCount},()=>qIdentity.slice());
+    const bindGlobals=globalBones(identityDeltas);
+    const targetRotations=Array.from({length:rig.boneCount},()=>qIdentity.slice());
+    const delays=new Float32Array(rig.boneCount);
+    const rad=v=>v*Math.PI/180;
+    function setFingerTarget(indices,angles,phase){indices.forEach((bone,i)=>{targetRotations[bone]=qEuler(rad(angles[i]),0,0);delays[bone]=phase+i*.055;});}
+    setFingerTarget([5,6,7],[58,78,58],0);
+    setFingerTarget([9,10,11],[60,82,61],.014);
+    setFingerTarget([13,14,15],[64,84,64],.030);
+    setFingerTarget([17,18,19],[60,76,56],.050);
+    // Final thumb constraint: the distal phalanx lies almost horizontally across
+    // the inside of the four curled fingers (world direction ≈ [1,0,.06]).
+    targetRotations[1]=qEuler(rad(9.2),rad(-30.3),rad(-29.2));delays[1]=.17;
+    targetRotations[2]=qEuler(rad(3.3),rad(7.7),rad(-52.9));delays[2]=.225;
+    targetRotations[3]=qEuler(rad(56.7),rad(-9),rad(-66.6));delays[3]=.285;
+    const fingerKeys=['thumb','index','middle','ring','little'],fingerLabels=['拇指','食指','中指','无名指','小拇指'];
+    const boneFinger=new Int8Array(rig.boneCount);boneFinger.fill(-1);
+    [[1,2,3,4],[5,6,7,8],[9,10,11,12],[13,14,15,16],[17,18,19,20]].forEach((bones,group)=>bones.forEach(bone=>boneFinger[bone]=group));
+    let bendCommand=null,fingerCommands=null,waveStrength=0,boundaryClarity=1,contactStiffness=1,poseRevision=0;
+    const timelineBend=tm=>smoothJS((tm-7.35)/2.95);
+    const meanFingerBend=()=>fingerCommands?fingerCommands.reduce((sum,value)=>sum+value,0)/5:(bendCommand!==null?bendCommand:timelineBend(time));
+    function bendForGroup(tm,group){if(fingerCommands)return group>=0&&group<5?fingerCommands[group]:meanFingerBend();return bendCommand!==null?bendCommand:timelineBend(tm);}
+    function poseGlobalsAt(tm){
+      const commandDriven=bendCommand!==null||fingerCommands!==null;
+      const deltas=targetRotations.map((target,i)=>{const delay=delays[i]*(commandDriven ? .35 : 1),raw=bendForGroup(tm,boneFinger[i]);return qSlerp(qIdentity,target,smoothJS((raw-delay)/Math.max(.01,1-delay)));});
+      return globalBones(deltas);
+    }
+    function qMatrix(q){
+      const x=q[0],y=q[1],z=q[2],w=q[3],xx=x*x,yy=y*y,zz=z*z,xy=x*y,xz=x*z,yz=y*z,wx=w*x,wy=w*y,wz=w*z;
+      return [1-2*(yy+zz),2*(xy-wz),2*(xz+wy),2*(xy+wz),1-2*(xx+zz),2*(yz-wx),2*(xz-wy),2*(yz+wx),1-2*(xx+yy)];
+    }
+    const particleBones=new Uint8Array(count),particleGroups=new Uint8Array(count);
+    for(let i=0;i<count;i++){
+      const weights=new Float32Array(rig.boneCount);
+      for(let corner=0;corner<3;corner++){
+        const vertex=rig.sampleIndices[i*3+corner],bary=rig.sampleBarycentric[i*3+corner];
+        for(let influence=0;influence<2;influence++)weights[rig.skinIndices[vertex*2+influence]]+=bary*rig.skinWeights[vertex*2+influence];
+      }
+      let dominant=0;for(let bone=1;bone<rig.boneCount;bone++)if(weights[bone]>weights[dominant])dominant=bone;
+      particleBones[i]=dominant;particleGroups[i]=dominant===0?5:Math.min(4,Math.floor((dominant-1)/4));
+    }
+    const skinMatrices=new Float32Array(rig.boneCount*12),skinRotations=new Float32Array(rig.boneCount*4),skinDuals=new Float32Array(rig.boneCount*4),skinnedVertices=new Float32Array(rig.vertexCount*3);
+    const collisionCapsules=new Float32Array(15*8),fingerStarts=[1,5,9,13,17],capsuleRadii=[[.245,.215,.180],[.205,.180,.150],[.210,.185,.155],[.195,.172,.145],[.175,.155,.132]];
+    let bindReference=null;
+    function updateCollisionCapsules(posed){
+      let cursor=0,s=rig.world.scale;
+      for(let group=0;group<5;group++)for(let segment=0;segment<3;segment++){
+        const a=posed[fingerStarts[group]+segment].t,b=posed[fingerStarts[group]+segment+1].t,o=cursor*8;
+        collisionCapsules.set([-(a[0]-rig.world.centerX)*s,a[2]*s+rig.world.offsetY,a[1]*s,-(b[0]-rig.world.centerX)*s,b[2]*s+rig.world.offsetY,b[1]*s,capsuleRadii[group][segment],group],o);cursor++;
+      }
+    }
+    function buildSkinMatrices(tm){
+      const posed=poseGlobalsAt(tm);
+      for(let i=0;i<rig.boneCount;i++){
+        const bind=bindGlobals[i],pose=posed[i],rq=qMul(pose.q,qConj(bind.q)),r=qMatrix(rq),bx=bind.t[0],by=bind.t[1],bz=bind.t[2];
+        const tx=pose.t[0]-(r[0]*bx+r[1]*by+r[2]*bz),ty=pose.t[1]-(r[3]*bx+r[4]*by+r[5]*bz),tz=pose.t[2]-(r[6]*bx+r[7]*by+r[8]*bz),o=i*12;
+        skinMatrices.set([r[0],r[1],r[2],tx,r[3],r[4],r[5],ty,r[6],r[7],r[8],tz],o);
+        const d=qMul([tx,ty,tz,0],rq),q=i*4;
+        skinRotations.set(rq,q);skinDuals.set([d[0]*.5,d[1]*.5,d[2]*.5,d[3]*.5],q);
+      }
+      return posed;
+    }
+    function computeParticlePose(tm,out,contactOut=null){
+      const posedBones=buildSkinMatrices(tm);updateCollisionCapsules(posedBones);if(contactOut)contactOut.fill(0);
+      for(let i=0;i<rig.vertexCount;i++){
+        const x=rig.vertices[i*3],y=rig.vertices[i*3+1],z=rig.vertices[i*3+2],o=i*3;
+        let ox=0,oy=0,oz=0,brx=0,bry=0,brz=0,brw=0,bdx=0,bdy=0,bdz=0,bdw=0,refx=0,refy=0,refz=0,refw=1,hasRef=false;
+        for(let j=0;j<2;j++){
+          const weight=rig.skinWeights[i*2+j];if(weight<=0)continue;
+          const bone=rig.skinIndices[i*2+j],m=bone*12,q=bone*4;
+          ox+=(skinMatrices[m]*x+skinMatrices[m+1]*y+skinMatrices[m+2]*z+skinMatrices[m+3])*weight;
+          oy+=(skinMatrices[m+4]*x+skinMatrices[m+5]*y+skinMatrices[m+6]*z+skinMatrices[m+7])*weight;
+          oz+=(skinMatrices[m+8]*x+skinMatrices[m+9]*y+skinMatrices[m+10]*z+skinMatrices[m+11])*weight;
+          let sign=1;
+          if(hasRef&&refx*skinRotations[q]+refy*skinRotations[q+1]+refz*skinRotations[q+2]+refw*skinRotations[q+3]<0)sign=-1;
+          if(!hasRef){refx=skinRotations[q];refy=skinRotations[q+1];refz=skinRotations[q+2];refw=skinRotations[q+3];hasRef=true;}
+          const ws=weight*sign;
+          brx+=skinRotations[q]*ws;bry+=skinRotations[q+1]*ws;brz+=skinRotations[q+2]*ws;brw+=skinRotations[q+3]*ws;
+          bdx+=skinDuals[q]*ws;bdy+=skinDuals[q+1]*ws;bdz+=skinDuals[q+2]*ws;bdw+=skinDuals[q+3]*ws;
+        }
+        const ql=Math.hypot(brx,bry,brz,brw)||1;brx/=ql;bry/=ql;brz/=ql;brw/=ql;bdx/=ql;bdy/=ql;bdz/=ql;bdw/=ql;
+        const orth=brx*bdx+bry*bdy+brz*bdz+brw*bdw;bdx-=brx*orth;bdy-=bry*orth;bdz-=brz*orth;bdw-=brw*orth;
+        const rp=qRotate([brx,bry,brz,brw],[x,y,z]),tq=qMul([bdx,bdy,bdz,bdw],[-brx,-bry,-brz,brw]);
+        const dx=rp[0]+2*tq[0],dy=rp[1]+2*tq[1],dz=rp[2]+2*tq[2],w0=rig.skinWeights[i*2],w1=rig.skinWeights[i*2+1],elastic=.82*Math.min(1,4*w0*w1);
+        ox+=(dx-ox)*elastic;oy+=(dy-oy)*elastic;oz+=(dz-oz)*elastic;
+        skinnedVertices[o]=ox;skinnedVertices[o+1]=oy;skinnedVertices[o+2]=oz;
+      }
+      const scale=rig.world.scale,centerX=rig.world.centerX,offsetY=rig.world.offsetY;
+      for(let i=0;i<count;i++){
+        const ia=rig.sampleIndices[i*3]*3,ib=rig.sampleIndices[i*3+1]*3,ic=rig.sampleIndices[i*3+2]*3,w0=rig.sampleBarycentric[i*3],w1=rig.sampleBarycentric[i*3+1],w2=rig.sampleBarycentric[i*3+2];
+        const mx=skinnedVertices[ia]*w0+skinnedVertices[ib]*w1+skinnedVertices[ic]*w2,my=skinnedVertices[ia+1]*w0+skinnedVertices[ib+1]*w1+skinnedVertices[ic+1]*w2,mz=skinnedVertices[ia+2]*w0+skinnedVertices[ib+2]*w1+skinnedVertices[ic+2]*w2,o=i*3;
+        let wx=-(mx-centerX)*scale,wy=mz*scale+offsetY,wz=my*scale;
+        const group=particleGroups[i],fist=bendForGroup(tm,group<5?group:-1);
+        const palmBand=Math.exp(-Math.pow((wy+.10)/1.58,2));
+        const knuckleBand=Math.exp(-Math.pow((wy-1.18)/.82,2));
+        const volume=fist*(.105*palmBand+.075*knuckleBand);
+        wz*=1+volume;
+        wx*=1-fist*.018*palmBand;
+        let contact=0;
+        if(bindReference){
+          const bx=bindReference[o],by=bindReference[o+1],bz=bindReference[o+2];
+          const webMask=Math.exp(-Math.pow((bx+.72)/.42,2)-Math.pow((by-.05)/.78,2));
+          if(webMask>.015&&fist>0){
+            // The thumb-index web is an elastic ribbon between palm and index, not a
+            // rigid extension of the thumb bone. Re-evaluate the bind point through
+            // palm and index-base carriers, then blend it back into the skinned pose.
+            const px=centerX-bx/scale,py=bz/scale,pz=(by-offsetY)/scale,m0=0,m5=60;
+            const p0x=skinMatrices[m0]*px+skinMatrices[m0+1]*py+skinMatrices[m0+2]*pz+skinMatrices[m0+3],p0y=skinMatrices[m0+4]*px+skinMatrices[m0+5]*py+skinMatrices[m0+6]*pz+skinMatrices[m0+7],p0z=skinMatrices[m0+8]*px+skinMatrices[m0+9]*py+skinMatrices[m0+10]*pz+skinMatrices[m0+11];
+            const p5x=skinMatrices[m5]*px+skinMatrices[m5+1]*py+skinMatrices[m5+2]*pz+skinMatrices[m5+3],p5y=skinMatrices[m5+4]*px+skinMatrices[m5+5]*py+skinMatrices[m5+6]*pz+skinMatrices[m5+7],p5z=skinMatrices[m5+8]*px+skinMatrices[m5+9]*py+skinMatrices[m5+10]*pz+skinMatrices[m5+11],along=.38*smoothJS((by+.42)/1.12);
+            const ex=-((p0x+(p5x-p0x)*along)-centerX)*scale;
+            const ey=(p0z+(p5z-p0z)*along)*scale+offsetY;
+            const ez=(p0y+(p5y-p0y)*along)*scale;
+            const palmSide=bz<0?1:.68,elasticWeight=webMask*fist*.76*palmSide;
+            wx+=(ex-wx)*elasticWeight;wy+=(ey-wy)*elasticWeight;wz+=(ez-wz)*elasticWeight;
+            // Strain follows the index extension: upper web particles lag slightly,
+            // which reads as stretched skin instead of a joint-shaped cavity.
+            wy+=fist*webMask*(.035+.045*along);
+          }
+          const boneOffset=group<5?particleBones[i]-fingerStarts[group]:0;
+          if(fist>.015&&group<5){
+            // Palm contact: project distal finger skin out of an anatomical palm
+            // volume. The projection follows the ellipsoid gradient, allowing the
+            // fingertip to flatten and slide instead of being clipped on one axis.
+            if(group>0&&boneOffset>=1){
+              const pcx=.06,pcy=-.27,pcz=-.01,rx=1.28,ry=1.36,rz=.47,dx=(wx-pcx)/rx,dy=(wy-pcy)/ry,dz=(wz-pcz)/rz,q=dx*dx+dy*dy+dz*dz;
+              if(q<1&&q>1e-5){
+                const inv=1/Math.sqrt(q),tx=pcx+(wx-pcx)*inv,ty=pcy+(wy-pcy)*inv,tz=pcz+(wz-pcz)*inv,penetration=Math.hypot(tx-wx,ty-wy,tz-wz),strength=smoothJS(penetration/.24)*fist*Math.min(1,contactStiffness),response=Math.min(1,(.64+.24*strength)*fist*contactStiffness);
+                wx+=(tx-wx)*response;wy+=(ty-wy)*response;wz+=(tz-wz)*response;contact=Math.max(contact,strength);
+              }
+            }
+            // Cross-region contact: each finger is represented by three moving
+            // capsules. Only capsules belonging to a different skin region repel
+            // the particle, so neighboring fingers can compress without crossing.
+            for(let capsule=0;capsule<15;capsule++){
+              const c=capsule*8,otherGroup=collisionCapsules[c+7];if(otherGroup===group)continue;
+              const ax=collisionCapsules[c],ay=collisionCapsules[c+1],az=collisionCapsules[c+2],vx=collisionCapsules[c+3]-ax,vy=collisionCapsules[c+4]-ay,vz=collisionCapsules[c+5]-az,len2=vx*vx+vy*vy+vz*vz||1;
+              const along=Math.max(0,Math.min(1,((wx-ax)*vx+(wy-ay)*vy+(wz-az)*vz)/len2)),cx=ax+vx*along,cy=ay+vy*along,cz=az+vz*along;
+              let nx=wx-cx,ny=wy-cy,nz=wz-cz,dist=Math.hypot(nx,ny,nz),minDistance=collisionCapsules[c+6]+.130;
+              if(dist<minDistance){
+                if(dist<1e-5){nx=group<otherGroup?-1:1;ny=0;nz=0;dist=0;}
+                else{nx/=dist;ny/=dist;nz/=dist;}
+                const penetration=minDistance-dist,strength=smoothJS(penetration/.15)*fist*Math.min(1,contactStiffness),push=penetration*(.54+.28*strength)*fist*contactStiffness;
+                wx+=nx*push;wy+=ny*push;wz+=nz*push;contact=Math.max(contact,strength);
+              }
+            }
+          }
+        }
+        if(contactOut)contactOut[i]=contact;
+        out[o]=wx;out[o+1]=wy;out[o+2]=wz;
+      }
+    }
+    const starts = new Float32Array(count * 3);
+    const posePositions=new Float32Array(count*3),prevPosePositions=new Float32Array(count*3),contactStrengths=new Float32Array(count);
+    computeParticlePose(0,posePositions,contactStrengths);prevPosePositions.set(posePositions);bindReference=new Float32Array(posePositions);
+    const colors = new Float32Array(count * 3);
+    const seeds = new Float32Array(count);
+    const lineTs = new Float32Array(count);
+    const CUBE = { halfX:3.72, bottom:-2.94, top:3.38, halfZ:2.82 };
+    const palette={deep:[.035,.42,.72],cyan:[.06,.94,1.08],white:[.74,1.02,1.08],violet:[.20,.43,.94]};
+    function mixColor(a,b,t){return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];}
+    function halton(index, base) {
+      let value=0, fraction=1/base;
+      while(index>0){value+=(index%base)*fraction;index=Math.floor(index/base);fraction/=base;}
+      return value;
+    }
+    function mortonCode(x,y){
+      const spread=v=>{v&=1023;v=(v|(v<<16))&0x030000FF;v=(v|(v<<8))&0x0300F00F;v=(v|(v<<4))&0x030C30C3;v=(v|(v<<2))&0x09249249;return v;};
+      return spread(x)|(spread(y)<<1);
+    }
+    function palmAnatomy(x,y,z){
+      const palmSurface=smoothJS((-z-.08)/.38);
+      const heartY=.18+.075*Math.sin((x+.34)*1.72),heartDelta=y-heartY,heartSpan=Math.exp(-Math.pow(Math.abs(x)/1.16,8));
+      const headY=-.27+.105*Math.sin((x+.52)*1.86),headDelta=y-headY,headSpan=Math.exp(-Math.pow(Math.abs(x+.04)/1.08,8));
+      const lifeRadius=Math.hypot((x+.55)/.46,(y+.43)/.70),lifeSpan=x<.18?1:Math.exp(-Math.pow((x-.18)/.16,2));
+      const heartCore=Math.exp(-Math.pow(heartDelta/.032,2))*heartSpan,headCore=Math.exp(-Math.pow(headDelta/.034,2))*headSpan,lifeCore=Math.exp(-Math.pow((lifeRadius-1)/.036,2))*lifeSpan;
+      const heartRidge=Math.exp(-Math.pow((Math.abs(heartDelta)-.055)/.020,2))*heartSpan,headRidge=Math.exp(-Math.pow((Math.abs(headDelta)-.058)/.022,2))*headSpan,lifeRidge=Math.exp(-Math.pow((Math.abs(lifeRadius-1)-.060)/.024,2))*lifeSpan;
+      return {palmSurface,creaseCore:Math.max(heartCore,headCore,lifeCore)*palmSurface,wrinkleRidge:Math.max(heartRidge,headRidge,lifeRidge)*palmSurface};
+    }
+    const plane=[];
+    for(let i=0;i<count;i++){
+      const u=halton(i+1,2),v=halton(i+1,3);
+      plane.push({u,v,code:mortonCode(Math.round(u*1023),Math.round(v*1023))});
+    }
+    plane.sort((a,b)=>a.code-b.code);
+    for (let i = 0; i < count; i++) {
+      const seed=rand(),p=plane[i],x=posePositions[i*3],y=posePositions[i*3+1],z=posePositions[i*3+2];
+      const jitterX=(seed-.5)*.028,jitterZ=(halton(i+1,5)-.5)*.028;
+      starts.set([(p.u-.5)*(CUBE.halfX*2-.56)+jitterX,CUBE.bottom+.028+(seed-.5)*.016,(p.v-.5)*(CUBE.halfZ*2-.50)+jitterZ],i*3);
+      const height=Math.max(0,Math.min(1,(y+2.8)/6.0));
+      const field=.5+.5*Math.sin(x*1.65+y*.72+z*2.1);
+      let color=mixColor(palette.deep,palette.cyan,.46+.40*height);
+      color=mixColor(color,field>.58?palette.white:palette.violet,.055+.10*Math.abs(field-.5)*2);
+      colors.set(color,i*3);
+      seeds[i]=seed;
+      const anatomy=palmAnatomy(x,y,z);
+      let jointGroove=0;
+      for(const center of [-.66,.05,.65,1.13])jointGroove=Math.max(jointGroove,Math.exp(-Math.pow((x-center)/.18,2)-Math.pow((y-.61)/.048,2)));
+      const cut=Math.max(anatomy.creaseCore,.46*jointGroove*anatomy.palmSurface);
+      lineTs[i]=seed<Math.min(.72,cut*.68)?.72+.22*cut:0;
+    }
+
+    function makeBuffer(data, size, attribute, usage=gl.STATIC_DRAW) {
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, data, usage);
+      const loc = gl.getAttribLocation(program, attribute);
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+      return { buffer, loc, size };
+    }
+
+    const attrs = {
+      start: makeBuffer(starts,3,'aStart'), pose:makeBuffer(posePositions,3,'aPose',gl.DYNAMIC_DRAW), prevPose:makeBuffer(prevPosePositions,3,'aPrevPose',gl.DYNAMIC_DRAW),
+      color: makeBuffer(colors, 3, 'aColor'), seed: makeBuffer(seeds, 1, 'aSeed'), lineT: makeBuffer(lineTs, 1, 'aLineT'),contact:makeBuffer(contactStrengths,1,'aContact',gl.DYNAMIC_DRAW)
+    };
+
+    const detailIndices=[],detailStrain=[];
+    const tendonCenters=[-.66,.05,.65,1.13],knuckleY=[.82,.86,.82,.70];
+    for(let i=0;i<count;i++){
+      const x=bindReference[i*3],y=bindReference[i*3+1],z=bindReference[i*3+2],anatomy=palmAnatomy(x,y,z),dorsalSurface=smoothJS((z-.08)/.36),surface=Math.max(anatomy.palmSurface,dorsalSurface);
+      let knuckles=0,tendons=0;
+      for(let k=0;k<tendonCenters.length;k++){
+        const center=tendonCenters[k];
+        knuckles=Math.max(knuckles,Math.exp(-Math.pow((x-center)/.19,2)-Math.pow((y-knuckleY[k])/.15,2)));
+        tendons=Math.max(tendons,Math.exp(-Math.pow((x-center)/.060,2)-Math.pow((y-.15)/.72,2)));
+      }
+      const web=Math.exp(-Math.pow((x+.74)/.25,2)-Math.pow((y-.02)/.34,2));
+      const score=1.30*anatomy.wrinkleRidge+surface*(1.10*knuckles+.30*web)+dorsalSurface*.58*tendons;
+      if(seeds[i]<Math.min(.92,score*.82)){
+        const strain=Math.min(1,Math.max(anatomy.wrinkleRidge,.62*knuckles));detailIndices.push(i);detailStrain.push(strain);
+        const secondPick=(seeds[i]*11.73+i*.41421356)%1;
+        if(anatomy.wrinkleRidge>.15&&secondPick<anatomy.wrinkleRidge*.72){detailIndices.push(i);detailStrain.push(strain);}
+      }
+    }
+    const detailCount=detailIndices.length,detailStart=new Float32Array(detailCount*3),detailPose=new Float32Array(detailCount*3),detailPrevPose=new Float32Array(detailCount*3),detailOffsets=new Float32Array(detailCount*3),detailColors=new Float32Array(detailCount*3),detailSeeds=new Float32Array(detailCount),detailLineTs=new Float32Array(detailCount),detailContacts=new Float32Array(detailCount);
+    detailIndices.forEach((idx,j)=>{
+      const o=idx*3,d=j*3,angle=seeds[idx]*19.17+j*2.39996,radius=.012+.025*((seeds[idx]*7.13)%1);
+      detailOffsets.set([Math.cos(angle)*radius,Math.sin(angle)*radius,(seeds[idx]-.5)*.030],d);
+      detailStart.set(starts.subarray(o,o+3),d);
+      detailPose.set([posePositions[o]+detailOffsets[d],posePositions[o+1]+detailOffsets[d+1],posePositions[o+2]+detailOffsets[d+2]],d);
+      detailPrevPose.set(detailPose.subarray(d,d+3),d);
+      detailColors.set([colors[o]*.70+.30,colors[o+1]*.86+.14,Math.min(1.14,colors[o+2]*.90+.14)],d);
+      detailSeeds[j]=(seeds[idx]*.731+.193)%1;
+      detailLineTs[j]=-detailStrain[j];
+    });
+    const detailAttrs={
+      start:makeBuffer(detailStart,3,'aStart'),pose:makeBuffer(detailPose,3,'aPose',gl.DYNAMIC_DRAW),prevPose:makeBuffer(detailPrevPose,3,'aPrevPose',gl.DYNAMIC_DRAW),
+      color:makeBuffer(detailColors,3,'aColor'),seed:makeBuffer(detailSeeds,1,'aSeed'),lineT:makeBuffer(detailLineTs,1,'aLineT'),contact:makeBuffer(detailContacts,1,'aContact',gl.DYNAMIC_DRAW)
+    };
+
+    function createParticleSet(start,pose,color,seed){
+      const zeros=new Float32Array(seed.length);
+      return {
+        start:makeBuffer(start,3,'aStart'),pose:makeBuffer(pose,3,'aPose'),prevPose:makeBuffer(pose,3,'aPrevPose'),
+        color:makeBuffer(color,3,'aColor'),seed:makeBuffer(seed,1,'aSeed'),lineT:makeBuffer(zeros,1,'aLineT'),contact:makeBuffer(zeros,1,'aContact')
+      };
+    }
+
+    const cloudCount=3600,cloudStarts=new Float32Array(cloudCount*3),cloudPose=new Float32Array(cloudCount*3),cloudColors=new Float32Array(cloudCount*3),cloudSeeds=new Float32Array(cloudCount);
+    for(let i=0;i<cloudCount;i++){
+      const seed=rand(),u=halton(i+1,2),v=halton(i+1,3),angle=rand()*Math.PI*2;
+      const radius=1.15+Math.pow(rand(),.58)*2.35,height=-1.15+Math.pow(rand(),.78)*4.85;
+      cloudStarts.set([(u-.5)*(CUBE.halfX*2-.35),CUBE.bottom+.045+(seed-.5)*.035,(v-.5)*(CUBE.halfZ*2-.30)],i*3);
+      cloudPose.set([Math.cos(angle)*radius*.88,height,Math.sin(angle)*radius*.58],i*3);
+      const tint=.45+.55*rand();cloudColors.set([.035+.08*tint,.58+.42*tint,.82+.28*tint],i*3);cloudSeeds[i]=seed;
+    }
+    const cloudAttrs=createParticleSet(cloudStarts,cloudPose,cloudColors,cloudSeeds);
+
+    const poolCount=2400,poolStart=new Float32Array(poolCount*3),poolPose=new Float32Array(poolCount*3),poolColors=new Float32Array(poolCount*3),poolSeeds=new Float32Array(poolCount);
+    for(let i=0;i<poolCount;i++){
+      const seed=rand(),angle=rand()*Math.PI*2,radius=.55+Math.pow(rand(),.22)*1.95+(rand()-.5)*.20;
+      const p=[Math.cos(angle)*radius*1.34,CUBE.bottom+.055+rand()*.055,Math.sin(angle)*radius*.72];
+      poolStart.set(p,i*3);poolPose.set(p,i*3);poolColors.set([.04,.76+.22*seed,.94+.12*seed],i*3);poolSeeds[i]=seed;
+    }
+    const poolAttrs=createParticleSet(poolStart,poolPose,poolColors,poolSeeds);
+
+    // A selected subset is duplicated into two vertices per particle for velocity streaks.
+    const selected = [];
+    for (let i = 0; i < count; i++) if (seeds[i] > .74 || i % 31 === 0) selected.push(i);
+    const lineCount = selected.length * 2;
+    function duplicateVec3(src) {
+      const out = new Float32Array(lineCount * 3);
+      selected.forEach((idx,j) => { const v = src.subarray(idx*3,idx*3+3); out.set(v,j*6); out.set(v,j*6+3); });
+      return out;
+    }
+    function duplicateScalar(src, endValues=false) {
+      const out = new Float32Array(lineCount);
+      selected.forEach((idx,j) => { out[j*2]=endValues?0:src[idx]; out[j*2+1]=endValues?1:src[idx]; });
+      return out;
+    }
+    const lineData = {
+      start:duplicateVec3(starts),pose:duplicateVec3(posePositions),prevPose:duplicateVec3(prevPosePositions),color:duplicateVec3(colors),
+      seed: duplicateScalar(seeds), lineT: duplicateScalar(seeds, true),contact:new Float32Array(lineCount)
+    };
+    const lineBuffers = {};
+    Object.entries({start:['aStart',3],pose:['aPose',3],prevPose:['aPrevPose',3],color:['aColor',3],seed:['aSeed',1],lineT:['aLineT',1],contact:['aContact',1]}).forEach(([key,[name,size]]) => {
+      const dynamic=key==='pose'||key==='prevPose';
+      const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,b); gl.bufferData(gl.ARRAY_BUFFER,lineData[key],dynamic?gl.DYNAMIC_DRAW:gl.STATIC_DRAW);
+      lineBuffers[key] = {buffer:b,loc:gl.getAttribLocation(program,name),size};
+    });
+    function updateBuffer(attribute,data){gl.bindBuffer(gl.ARRAY_BUFFER,attribute.buffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,data);}
+    function refreshLinePositions(source,out){selected.forEach((idx,j)=>{const v=source.subarray(idx*3,idx*3+3);out.set(v,j*6);out.set(v,j*6+3);});}
+    function refreshDetailPositions(source,out){detailIndices.forEach((idx,j)=>{const s=idx*3,d=j*3;out[d]=source[s]+detailOffsets[d];out[d+1]=source[s+1]+detailOffsets[d+1];out[d+2]=source[s+2]+detailOffsets[d+2];});}
+    function refreshDetailScalars(source,out){detailIndices.forEach((idx,j)=>out[j]=source[idx]);}
+    let lastPoseTime=NaN,lastPrevPoseTime=NaN,lastPoseRevision=-1;
+    function articulatedTime(tm){return tm<=7.35?0:(tm>=10.30?10.30:tm);}
+    function updateArticulatedPose(tm){
+      const poseTime=articulatedTime(tm),prevPoseTime=articulatedTime(Math.max(0,tm-.045));
+      if(Math.abs(poseTime-lastPoseTime)<1e-5&&Math.abs(prevPoseTime-lastPrevPoseTime)<1e-5&&lastPoseRevision===poseRevision)return;
+      computeParticlePose(poseTime,posePositions,contactStrengths);
+      computeParticlePose(prevPoseTime,prevPosePositions);
+      updateBuffer(attrs.pose,posePositions);updateBuffer(attrs.prevPose,prevPosePositions);updateBuffer(attrs.contact,contactStrengths);
+      refreshDetailPositions(posePositions,detailPose);refreshDetailPositions(prevPosePositions,detailPrevPose);
+      refreshDetailScalars(contactStrengths,detailContacts);
+      updateBuffer(detailAttrs.pose,detailPose);updateBuffer(detailAttrs.prevPose,detailPrevPose);updateBuffer(detailAttrs.contact,detailContacts);
+      refreshLinePositions(posePositions,lineData.pose);refreshLinePositions(prevPosePositions,lineData.prevPose);
+      updateBuffer(lineBuffers.pose,lineData.pose);updateBuffer(lineBuffers.prevPose,lineData.prevPose);
+      lastPoseTime=poseTime;lastPrevPoseTime=prevPoseTime;lastPoseRevision=poseRevision;
+    }
+
+    const x=CUBE.halfX, y0=CUBE.bottom, y1=CUBE.top, z=CUBE.halfZ;
+    const corners=[[-x,y0,-z],[x,y0,-z],[x,y0,z],[-x,y0,z],[-x,y1,-z],[x,y1,-z],[x,y1,z],[-x,y1,z]];
+    const edgePairs=[[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+    const edgeVertices=[];
+    edgePairs.forEach(pair=>{edgeVertices.push(...corners[pair[0]],...corners[pair[1]]);});
+    const gridVertices=[];
+    for(let i=1;i<7;i++){
+      const gx=-x+(2*x*i/7);
+      gridVertices.push(gx,y0+.008,-z, gx,y0+.008,z);
+    }
+    for(let i=1;i<6;i++){
+      const gz=-z+(2*z*i/6);
+      gridVertices.push(-x,y0+.008,gz, x,y0+.008,gz);
+    }
+    function makeCubeBuffer(values){
+      const buffer=gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+      gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(values),gl.STATIC_DRAW);
+      return {buffer,count:values.length/3};
+    }
+    const cubeEdges=makeCubeBuffer(edgeVertices);
+    const cubeGrid=makeCubeBuffer(gridVertices);
+    const cubePositionLoc=gl.getAttribLocation(cubeProgram,'aPosition');
+    const cubeU={
+      aspect:gl.getUniformLocation(cubeProgram,'uAspect'), yaw:gl.getUniformLocation(cubeProgram,'uYaw'),
+      pitch:gl.getUniformLocation(cubeProgram,'uPitch'), zoom:gl.getUniformLocation(cubeProgram,'uZoom'),
+      color:gl.getUniformLocation(cubeProgram,'uColor'), alpha:gl.getUniformLocation(cubeProgram,'uAlpha')
+    };
+
+    const U = {};
+    ['uTime','uEffectTime','uBend','uWave','uAspect','uYaw','uPitch','uZoom','uPointScale','uMode','uStatic','uGlobalAlpha','uSoftness'].forEach(n => U[n] = gl.getUniformLocation(program,n));
+
+    const brightU={texture:gl.getUniformLocation(brightProgram,'uTexture'),threshold:gl.getUniformLocation(brightProgram,'uThreshold')};
+    const blurU={texture:gl.getUniformLocation(blurProgram,'uTexture'),direction:gl.getUniformLocation(blurProgram,'uDirection'),texel:gl.getUniformLocation(blurProgram,'uTexel')};
+    const compositeU={scene:gl.getUniformLocation(compositeProgram,'uScene'),bloom:gl.getUniformLocation(compositeProgram,'uBloom'),strength:gl.getUniformLocation(compositeProgram,'uBloomStrength'),time:gl.getUniformLocation(compositeProgram,'uTime')};
+
+    const floatColor = gl.getExtension('EXT_color_buffer_float');
+    let sceneTarget=null,bloomA=null,bloomB=null,targetWidth=0,targetHeight=0;
+    function destroyTarget(target){
+      if(!target)return;
+      gl.deleteTexture(target.texture);gl.deleteFramebuffer(target.framebuffer);
+      if(target.depth)gl.deleteRenderbuffer(target.depth);
+    }
+    function createTarget(width,height,withDepth=false,hdr=false){
+      const texture=gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D,texture);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D,0,hdr?gl.RGBA16F:gl.RGBA8,width,height,0,gl.RGBA,hdr?gl.HALF_FLOAT:gl.UNSIGNED_BYTE,null);
+      const framebuffer=gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER,framebuffer);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,texture,0);
+      let depth=null;
+      if(withDepth){
+        depth=gl.createRenderbuffer();gl.bindRenderbuffer(gl.RENDERBUFFER,depth);
+        gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,width,height);
+        gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,depth);
+      }
+      if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw new Error('离屏帧缓冲初始化失败');
+      return {texture,framebuffer,depth,width,height};
+    }
+    function ensureTargets(){
+      const width=canvas.width,height=canvas.height;
+      if(width===targetWidth&&height===targetHeight)return;
+      destroyTarget(sceneTarget);destroyTarget(bloomA);destroyTarget(bloomB);
+      targetWidth=width;targetHeight=height;
+      const hdr=!!floatColor&&(!EMBED_MODE||EMBED_PROFILE.useHdrTargets);
+      sceneTarget=createTarget(width,height,true,hdr);
+      bloomA=createTarget(Math.max(1,width>>1),Math.max(1,height>>1),false,hdr);
+      bloomB=createTarget(Math.max(1,width>>1),Math.max(1,height>>1),false,hdr);
+      gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    }
+    function bindSet(set) {
+      Object.values(set).forEach(a => { gl.bindBuffer(gl.ARRAY_BUFFER,a.buffer); gl.enableVertexAttribArray(a.loc); gl.vertexAttribPointer(a.loc,a.size,gl.FLOAT,false,0,0); });
+    }
+    function drawCubePart(part,alpha){
+      gl.bindBuffer(gl.ARRAY_BUFFER,part.buffer);
+      gl.enableVertexAttribArray(cubePositionLoc);
+      gl.vertexAttribPointer(cubePositionLoc,3,gl.FLOAT,false,0,0);
+      gl.uniform1f(cubeU.alpha,alpha);
+      gl.drawArrays(gl.LINES,0,part.count);
+    }
+
+    gl.disable(gl.DEPTH_TEST);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    gl.clearColor(0.004,0.018,0.016,1);
+
+    let time = 0, effectTime = 0, playing = true, speed = 1;
+    let handedness = 'right', pendingFeedbackAck = null, droppedFeedbackFrames = 0;
+    let yaw = -.62, pitch = -.39, zoom = 12.25;
+    let dragging = false, lastX = 0, lastY = 0, autoOrbit = false;
+    const playBtn = document.getElementById('play');
+    const replayBtn = document.getElementById('replay');
+    const timeline = document.getElementById('timeline');
+    const timeReadout = document.getElementById('timeReadout');
+    const stageLabel = document.getElementById('stageLabel');
+    const speedSelect = document.getElementById('speed');
+    const recordBtn = document.getElementById('record');
+    const commandModeBtn=document.getElementById('commandMode'),bendSlider=document.getElementById('bendCommand'),bendValue=document.getElementById('bendValue');
+    const claritySlider=document.getElementById('clarity'),clarityValue=document.getElementById('clarityValue'),contactSlider=document.getElementById('contact'),contactValue=document.getElementById('contactValue');
+    const fingerSelect=document.getElementById('fingerSelect'),fingerSlider=document.getElementById('fingerCommand'),fingerValue=document.getElementById('fingerValue'),waveSlider=document.getElementById('wave'),waveValue=document.getElementById('waveValue');
+
+    function stageName(t) {
+      if(fingerCommands){const active=fingerCommands.map((value,index)=>value>.015?`${fingerLabels[index]} ${Math.round(value*100)}%`:null).filter(Boolean);return active.length?`分指控制 · ${active.join(' / ')}`:'分指控制 · 全部伸展';}
+      if(bendCommand!==null)return `指令控制 · 弯曲 ${Math.round(bendCommand*100)}%`;
+      if (t < 1.08) return '立方体底面 · 粒子静息';
+      if (t < 4.9) return '曲线抬升 · 连续流动';
+      if (t < 5.65) return '轮廓锁定 · 成形';
+      if (t < 7.35) return '张手保持 · 呼吸';
+      if (t < 10.3) return '连续骨骼 · 握拳';
+      return '握拳保持 · 消隐';
+    }
+    function updateUI() {
+      timeline.value = time;
+      timeReadout.textContent = `${time.toFixed(2)} / ${DURATION.toFixed(2)}`;
+      stageLabel.textContent = stageName(time);
+      playBtn.textContent = playing ? '暂停' : '播放';
+      const commandActive=bendCommand!==null||fingerCommands!==null,mean=meanFingerBend();
+      commandModeBtn.textContent=!commandActive?'指令：动画':(fingerCommands?'指令：分指':'指令：外部');commandModeBtn.classList.toggle('active',commandActive);
+      bendValue.textContent=!commandActive?'—':mean.toFixed(2);bendSlider.value=mean;clarityValue.textContent=boundaryClarity.toFixed(2);contactValue.textContent=contactStiffness.toFixed(2);waveValue.textContent=waveStrength.toFixed(2);
+      const selected=fingerSelect.value,index=fingerKeys.indexOf(selected),selectedValue=selected==='all'?mean:(fingerCommands?fingerCommands[index]:(bendCommand!==null?bendCommand:timelineBend(time)));
+      fingerSlider.value=selectedValue;fingerValue.textContent=selectedValue.toFixed(2);
+    }
+    function useTimeline(){if(bendCommand!==null||fingerCommands!==null){bendCommand=null;fingerCommands=null;poseRevision++;}updateUI();}
+    function setBendInstruction(value){bendCommand=Math.max(0,Math.min(1,Number(value)||0));fingerCommands=null;if(time<5.6||time>11.2)time=6.35;bendSlider.value=bendCommand;playing=false;poseRevision++;updateUI();return bendCommand;}
+    function fingerIndexOf(finger){const index=typeof finger==='number'?finger:fingerKeys.indexOf(String(finger));if(index<0||index>4)throw new Error(`未知手指：${finger}`);return index;}
+    function ensureFingerCommands(){if(!fingerCommands){const base=bendCommand!==null?bendCommand:timelineBend(time);fingerCommands=Array(5).fill(base);bendCommand=null;}return fingerCommands;}
+    function setFingerInstruction(finger,value){const index=fingerIndexOf(finger),commands=ensureFingerCommands();commands[index]=Math.max(0,Math.min(1,Number(value)||0));if(time<5.6||time>11.2)time=6.35;playing=false;poseRevision++;updateUI();return commands[index];}
+    function setFingerCommands(values){const commands=ensureFingerCommands();if(Array.isArray(values)){for(let i=0;i<5;i++)if(values[i]!==undefined)commands[i]=Math.max(0,Math.min(1,Number(values[i])||0));}else if(values&&typeof values==='object'){for(const [key,value] of Object.entries(values)){const index=fingerIndexOf(key);commands[index]=Math.max(0,Math.min(1,Number(value)||0));}}else throw new Error('分指指令应为五元素数组或手指名称对象');if(time<5.6||time>11.2)time=6.35;playing=false;poseRevision++;updateUI();return commands.slice();}
+    function setWaveStrength(value){waveStrength=Math.max(0,Math.min(1.5,Number(value)||0));waveSlider.value=waveStrength;updateUI();return waveStrength;}
+    function setBoundaryClarity(value){boundaryClarity=Math.max(.5,Math.min(1.5,Number(value)||1));claritySlider.value=boundaryClarity;updateUI();return boundaryClarity;}
+    function setContactStiffness(value){contactStiffness=Math.max(0,Math.min(1.5,Number(value)||0));contactSlider.value=contactStiffness;poseRevision++;updateUI();return contactStiffness;}
+    playBtn.onclick = () => { useTimeline();playing = !playing; updateUI(); };
+    replayBtn.onclick = () => { useTimeline();time = 0; playing = true; updateUI(); };
+    timeline.oninput = () => { useTimeline();time = Number(timeline.value); playing = false; updateUI(); };
+    commandModeBtn.onclick=()=>bendCommand===null&&fingerCommands===null?setBendInstruction(timelineBend(time)):useTimeline();
+    bendSlider.oninput=()=>setBendInstruction(bendSlider.value);
+    fingerSelect.onchange=()=>updateUI();
+    fingerSlider.oninput=()=>fingerSelect.value==='all'?setBendInstruction(fingerSlider.value):setFingerInstruction(fingerSelect.value,fingerSlider.value);
+    waveSlider.oninput=()=>setWaveStrength(waveSlider.value);
+    claritySlider.oninput=()=>setBoundaryClarity(claritySlider.value);
+    contactSlider.oninput=()=>setContactStiffness(contactSlider.value);
+    speedSelect.onchange = () => { speed = Number(speedSelect.value); };
+    window.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); useTimeline();playing=!playing;updateUI(); } });
+
+    canvas.addEventListener('pointerdown', e => { dragging=true; autoOrbit=false; lastX=e.clientX; lastY=e.clientY; canvas.setPointerCapture(e.pointerId); });
+    canvas.addEventListener('pointermove', e => { if(!dragging)return; yaw += (e.clientX-lastX)*.006; pitch = Math.max(-.55,Math.min(.45,pitch+(e.clientY-lastY)*.004)); lastX=e.clientX;lastY=e.clientY; });
+    canvas.addEventListener('pointerup', () => dragging=false);
+    canvas.addEventListener('wheel', e => { e.preventDefault(); zoom=Math.max(7.0,Math.min(14.0,zoom+e.deltaY*.006)); }, {passive:false});
+    canvas.addEventListener('webglcontextlost',event=>{
+      event.preventDefault();playing=false;errorBox.style.display='grid';errorBox.textContent='WebGL上下文已丢失，实时反馈已冻结，请重新加载页面。';
+      const detail={at_performance_ms:performance.now()};
+      window.dispatchEvent(new CustomEvent('particlehand:context-lost',{detail}));
+      if(window.parent!==window)window.parent.postMessage({type:'particlehand:context-lost',detail},window.location.origin);
+    });
+
+    async function recordOneCycle() {
+      if (!window.MediaRecorder || !canvas.captureStream) { alert('当前浏览器不支持 Canvas WebM 录制。'); return; }
+      recordBtn.disabled = true; recordBtn.textContent = '录制中…';
+      const stream = canvas.captureStream(60);
+      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm';
+      const recorder = new MediaRecorder(stream, {mimeType:mime, videoBitsPerSecond:12_000_000});
+      const chunks=[]; recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};
+      const done = new Promise(resolve => recorder.onstop=resolve);
+      bendCommand=null;fingerCommands=null;poseRevision++;time=0; speed=1; playing=true; recorder.start(250);
+      const started=performance.now();
+      const watcher=setInterval(()=>{ if(performance.now()-started > (DURATION+.15)*1000){clearInterval(watcher);recorder.stop();playing=false;} },100);
+      await done;
+      const blob=new Blob(chunks,{type:'video/webm'}); const url=URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url; a.download='particle-hand-plane-to-fist.webm'; a.click();
+      setTimeout(()=>URL.revokeObjectURL(url),5000); recordBtn.disabled=false; recordBtn.textContent='录制一轮'; updateUI();
+    }
+    recordBtn.onclick = recordOneCycle;
+    function setTime(value){time=Math.max(0,Math.min(DURATION,Number(value)||0));playing=false;updateUI();return time;}
+    function play(){useTimeline();playing=true;updateUI();return true;}
+    function pause(){playing=false;updateUI();return true;}
+    function setPlaybackSpeed(value){speed=Math.max(.05,Math.min(4,Number(value)||1));speedSelect.value=[.5,1,1.5].includes(speed)?String(speed):speedSelect.value;return speed;}
+    function setCamera(options={}){
+      if(Number.isFinite(options.yaw))yaw=options.yaw;
+      if(Number.isFinite(options.pitch))pitch=Math.max(-.55,Math.min(.45,options.pitch));
+      if(Number.isFinite(options.zoom))zoom=Math.max(7,Math.min(14,options.zoom));
+      if(typeof options.autoOrbit==='boolean')autoOrbit=options.autoOrbit;
+      return {yaw,pitch,zoom,autoOrbit};
+    }
+    function finiteClamp(value,min,max,name){const parsed=Number(value);if(!Number.isFinite(parsed))throw new TypeError(`${name} 必须是有限数值`);return Math.max(min,Math.min(max,parsed));}
+    function setHandedness(value){const next=String(value).toLowerCase();if(next!=='left'&&next!=='right')throw new Error(`未知手别：${value}`);handedness=next;canvas.style.transform=handedness==='left'?'scaleX(-1)':'none';canvas.style.transformOrigin='50% 50%';return handedness;}
+    function applyFeedbackFrame(frame={}){
+      const receivedAt=performance.now();
+      if(frame.handedness!==undefined||frame.hand_side!==undefined)setHandedness(frame.handedness??frame.hand_side);
+      if(frame.grip!==undefined||frame.grip_target_01!==undefined||frame.erd_strength!==undefined){bendCommand=finiteClamp(frame.grip??frame.grip_target_01??frame.erd_strength,0,1,'grip');fingerCommands=null;if(time<5.6||time>11.2)time=6.35;playing=false;}
+      if(frame.wave!==undefined){waveStrength=finiteClamp(frame.wave,0,1.5,'wave');waveSlider.value=waveStrength;}
+      if(frame.clarity!==undefined){boundaryClarity=finiteClamp(frame.clarity,.5,1.5,'clarity');claritySlider.value=boundaryClarity;}
+      if(frame.contact_stiffness!==undefined){contactStiffness=finiteClamp(frame.contact_stiffness,0,1.5,'contact_stiffness');contactSlider.value=contactStiffness;}
+      poseRevision++;
+      if(pendingFeedbackAck)droppedFeedbackFrames++;
+      pendingFeedbackAck={schema:'particlehand-render-ack/1',seq:Number.isFinite(Number(frame.seq))?Number(frame.seq):null,command_id:frame.command_id??null,received_at_performance_ms:receivedAt,applied_at_performance_ms:performance.now()};
+      updateUI();
+      return getState();
+    }
+    function getState(){return {version:VERSION,mode:fingerCommands?'fingers':(bendCommand===null?'timeline':'command'),handedness,bend:bendCommand,fingers:fingerCommands?Object.fromEntries(fingerKeys.map((key,index)=>[key,fingerCommands[index]])):null,waveStrength,boundaryClarity,contactStiffness,time,effectTime,duration:DURATION,playing,speed,camera:{yaw,pitch,zoom,autoOrbit}};}
+    window.particleHand={
+      version:VERSION,ready:true,setCommand:setBendInstruction,setBend:setBendInstruction,setFinger:setFingerInstruction,setFingers:setFingerCommands,
+      setWave:setWaveStrength,setWaveStrength,setBoundaryClarity,setContactStiffness,setHandedness,applyFeedbackFrame,useTimeline,setTime,play,pause,setPlaybackSpeed,setCamera,getState
+    };
+    window.dispatchEvent(new CustomEvent('particlehand:ready',{detail:{version:VERSION,api:window.particleHand}}));
+
+    function resize() {
+      const maxDpr=EMBED_MODE?EMBED_PROFILE.maxDevicePixelRatio:2;
+      const dpr = Math.min(maxDpr, window.devicePixelRatio || 1);
+      const w = Math.floor(canvas.clientWidth*dpr), h=Math.floor(canvas.clientHeight*dpr);
+      if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
+      ensureTargets();
+    }
+    function draw(mode, scale, alpha, softness, primitive, vertexCount, set, staticMode=0) {
+      bindSet(set);
+      gl.uniform1f(U.uMode, mode); gl.uniform1f(U.uStatic,staticMode); gl.uniform1f(U.uPointScale, scale); gl.uniform1f(U.uGlobalAlpha, alpha); gl.uniform1f(U.uSoftness, softness);
+      gl.drawArrays(primitive, 0, vertexCount);
+    }
+
+    let last = performance.now();
+    function frame(now) {
+      resize();
+      const dt=Math.max(0,Math.min(.05,(now-last)/1000)); last=now;
+      effectTime+=dt;
+      if(playing){time+=dt*speed;if(time>=DURATION)time%=DURATION;}
+      if(autoOrbit) yaw = -.62 + Math.sin(now*.00017)*.13;
+      updateArticulatedPose(time);
+      gl.bindFramebuffer(gl.FRAMEBUFFER,sceneTarget.framebuffer);
+      gl.viewport(0,0,sceneTarget.width,sceneTarget.height);
+      gl.enable(gl.BLEND);
+      gl.depthMask(true);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+      gl.useProgram(cubeProgram);
+      gl.uniform1f(cubeU.aspect,canvas.width/canvas.height); gl.uniform1f(cubeU.yaw,yaw); gl.uniform1f(cubeU.pitch,pitch); gl.uniform1f(cubeU.zoom,zoom);
+      gl.uniform3f(cubeU.color,.12,.63,.82);
+      gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+      const cubeVisibility=1-.62*smoothJS((time-1.0)/4.4);
+      drawCubePart(cubeGrid,.075*cubeVisibility);
+      drawCubePart(cubeEdges,.30*cubeVisibility);
+
+      gl.useProgram(program);
+      const commandActive=bendCommand!==null||fingerCommands!==null,visualBend=commandActive?meanFingerBend():smoothJS((time-7.25)/2.85),commandStatic=commandActive?1:0;
+      gl.uniform1f(U.uTime,time);gl.uniform1f(U.uEffectTime,effectTime);gl.uniform1f(U.uBend,visualBend);gl.uniform1f(U.uWave,waveStrength); gl.uniform1f(U.uAspect,canvas.width/canvas.height); gl.uniform1f(U.uYaw,yaw); gl.uniform1f(U.uPitch,pitch); gl.uniform1f(U.uZoom,zoom);
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LEQUAL);
+      gl.depthMask(true);
+      gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+      draw(0,4.55*(1.06-.06*boundaryClarity),.98,6.9+1.3*boundaryClarity,gl.POINTS,count,attrs,commandStatic);
+      draw(0,1.72*(.92+.08*boundaryClarity),.98,12+3*boundaryClarity,gl.POINTS,detailCount,detailAttrs,commandStatic);
+
+      gl.depthMask(false);
+      gl.disable(gl.DEPTH_TEST);
+      gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
+      gl.uniform1f(U.uWave,0);
+      draw(0,14.0,.14,2.1,gl.POINTS,poolCount,poolAttrs,1);
+      draw(0,4.2,.52,8.0,gl.POINTS,poolCount,poolAttrs,1);
+      draw(0,6.4,.072,2.6,gl.POINTS,cloudCount,cloudAttrs);
+      draw(0,2.35,.29,8.6,gl.POINTS,cloudCount,cloudAttrs);
+      gl.uniform1f(U.uWave,waveStrength);
+      draw(0,12.2,.082*(1.20-.20*boundaryClarity),2.5,gl.POINTS,count,attrs,commandStatic);
+      draw(1,1,.34,3,gl.LINES,lineCount,lineBuffers);
+      gl.depthMask(true);
+
+      gl.disable(gl.BLEND);
+      gl.disable(gl.DEPTH_TEST);
+      gl.depthMask(false);
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER,bloomA.framebuffer);
+      gl.viewport(0,0,bloomA.width,bloomA.height);
+      gl.useProgram(brightProgram);
+      gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,sceneTarget.texture);gl.uniform1i(brightU.texture,0);gl.uniform1f(brightU.threshold,.22+.05*boundaryClarity);
+      gl.drawArrays(gl.TRIANGLES,0,3);
+
+      gl.useProgram(blurProgram);
+      gl.uniform1i(blurU.texture,0);gl.uniform2f(blurU.texel,1/bloomA.width,1/bloomA.height);
+      const bloomPasses=EMBED_MODE?EMBED_PROFILE.bloomPasses:3;
+      for(let i=0;i<bloomPasses;i++){
+        const spread=1.0+i*1.45;
+        gl.bindFramebuffer(gl.FRAMEBUFFER,bloomB.framebuffer);gl.viewport(0,0,bloomB.width,bloomB.height);
+        gl.bindTexture(gl.TEXTURE_2D,bloomA.texture);gl.uniform2f(blurU.direction,spread,0);gl.drawArrays(gl.TRIANGLES,0,3);
+        gl.bindFramebuffer(gl.FRAMEBUFFER,bloomA.framebuffer);gl.viewport(0,0,bloomA.width,bloomA.height);
+        gl.bindTexture(gl.TEXTURE_2D,bloomB.texture);gl.uniform2f(blurU.direction,0,spread);gl.drawArrays(gl.TRIANGLES,0,3);
+      }
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+      gl.viewport(0,0,canvas.width,canvas.height);
+      gl.useProgram(compositeProgram);
+      gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,sceneTarget.texture);gl.uniform1i(compositeU.scene,0);
+      gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,bloomA.texture);gl.uniform1i(compositeU.bloom,1);
+      gl.uniform1f(compositeU.strength,1.87-.35*boundaryClarity);gl.uniform1f(compositeU.time,effectTime);
+      gl.drawArrays(gl.TRIANGLES,0,3);
+      gl.depthMask(true);
+      if(pendingFeedbackAck){
+        gl.flush();
+        const detail={...pendingFeedbackAck,render_submitted_at_performance_ms:performance.now(),request_animation_frame_ms:now,dropped_input_frames:droppedFeedbackFrames,visibility_state:document.visibilityState,webgl_context_lost:gl.isContextLost(),renderer_state:getState()};
+        pendingFeedbackAck=null;droppedFeedbackFrames=0;
+        window.dispatchEvent(new CustomEvent('particlehand:presented',{detail}));
+        if(window.parent!==window)window.parent.postMessage({type:'particlehand:presented',detail},window.location.origin);
+      }
+      if(!EMBED_MODE)updateUI();
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  })();
+  </script>
+</body>
+</html>

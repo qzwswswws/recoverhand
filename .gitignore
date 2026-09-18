@@ -1,0 +1,13 @@
+data/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.pyc
+*.egg-info/
+*.tsbuildinfo
+.venv/
+frontend/node_modules/
+frontend/dist/
+artifacts/

@@ -1,0 +1,120 @@
+QWidget#shell {
+    background: #EAF0F2;
+    color: #172A33;
+    font-family: "Microsoft YaHei UI";
+    font-size: 14px;
+}
+
+QLabel#eyebrow {
+    color: #168477;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+}
+
+QLabel#title {
+    color: #10252E;
+    font-size: 28px;
+    font-weight: 700;
+}
+
+QLabel#subtitle, QLabel#muted {
+    color: #63757D;
+}
+
+QLabel#statusPill {
+    min-width: 126px;
+    padding: 8px 14px;
+    border-radius: 15px;
+    background: #DCE6E8;
+    color: #53676F;
+    font-weight: 600;
+}
+
+QLabel#statusPill[tone="working"] {
+    background: #DDF0ED;
+    color: #0D756B;
+}
+
+QLabel#statusPill[tone="good"] {
+    background: #D8F0E1;
+    color: #267548;
+}
+
+QLabel#statusPill[tone="warning"] {
+    background: #FFF0CD;
+    color: #8C6416;
+}
+
+QLabel#statusPill[tone="bad"] {
+    background: #F8DBD9;
+    color: #A13C35;
+}
+
+QFrame#card, QFrame#metricsCard {
+    background: #F8FBFC;
+    border: 1px solid #D4E0E4;
+    border-radius: 12px;
+}
+
+QLabel#sectionTitle {
+    color: #17313B;
+    font-size: 17px;
+    font-weight: 650;
+}
+
+QLineEdit, QComboBox {
+    min-height: 34px;
+    padding: 0 10px;
+    border: 1px solid #C6D4D9;
+    border-radius: 7px;
+    background: white;
+}
+
+QPushButton {
+    min-height: 36px;
+    padding: 0 18px;
+    border: 1px solid #B8C8CE;
+    border-radius: 7px;
+    background: #F7FAFB;
+    color: #24404A;
+    font-weight: 600;
+}
+
+QPushButton:hover {
+    background: #EAF3F4;
+}
+
+QPushButton:disabled {
+    color: #96A4AA;
+    background: #E9EEF0;
+}
+
+QPushButton#primaryButton {
+    border: 1px solid #0B756C;
+    background: #0E8277;
+    color: white;
+}
+
+QPushButton#primaryButton:hover {
+    background: #0A7168;
+}
+
+QLabel#metricCaption {
+    color: #718188;
+    font-size: 12px;
+}
+
+QLabel#metricValue {
+    color: #17313B;
+    font-size: 19px;
+    font-weight: 650;
+}
+
+QLabel#notice {
+    padding: 9px 12px;
+    border: 1px solid #D9CFAF;
+    border-radius: 7px;
+    background: #FFF9E9;
+    color: #715F2E;
+}

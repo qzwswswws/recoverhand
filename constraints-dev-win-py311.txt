@@ -1,0 +1,12 @@
+# 2026-09-14 在 Windows 11 x64 + Python 3.11.7 上验证的开发环境。
+# pyproject.toml 仍定义兼容范围；本文件用于让开发包首次安装可复现。
+PySide6==6.8.3
+pyqtgraph==0.14.0
+numpy==2.4.6
+pytest==8.4.2
+ruff==0.16.7
+fastapi==0.141.1
+uvicorn==0.52.4
+httpx==0.28.1
+bleak==0.22.3
+bleak-winrt==1.2.0
